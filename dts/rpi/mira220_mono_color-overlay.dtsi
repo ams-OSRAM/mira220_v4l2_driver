@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Definitions for MIRA220 camera module on VC I2C bus
+
+#include <dt-bindings/gpio/gpio.h>
+
+/{
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target = <&i2c0if>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	clk_frag: fragment@1 {
+		target = <&cam1_clk>;
+		__overlay__ {
+			status = "okay";
+			clock-frequency = <24000000>;
+		};
+	};
+
+	fragment@2 {
+		target = <&i2c0mux>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@5 {
+		target = <&cam1_reg>;
+		__overlay__ {
+			status = "okay";
+			regulator-name = "mira220_vana";
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+		};
+	};
+
+	i2c_frag: fragment@100 {
+		target = <&i2c_csi_dsi>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			mira220: mira220@54 {
+				// compatible = "ams,mira220";
+				// I2C addresses range from 0x54 to 0x57 (7-bit address)
+				// The interface board uses 0x54 by default
+				// MIRA220CSP: 0x54; PMIC: 0x2D; LM86: 0x4C; LM2759: 0x53;
+				// dsPIC33EP32MC503: 0x0A
+				reg = <0x54>;
+				// reg-names = "mira220";
+				status = "okay";
+
+				//clocks = <&mira220_clk>;
+				clocks = <&cam1_clk>;
+				clock-names = "xclk";
+
+				// TODO(jalv): Add here camera supplies based on the
+				// TPS65912 pmic.
+				VANA-supply = <&cam1_reg>;	/* 2.8v */
+				VDIG-supply = <&cam_dummy_reg>;	/* 1.8v */
+				VDDL-supply = <&cam_dummy_reg>;	/* 1.2v */
+
+				// FIXME(jalv): Make sure orientation is correct
+				rotation = <0>;
+				orientation = <2>;
+				skip-reg-upload = <0>;
+
+				port {
+					mira220_0: endpoint {
+						remote-endpoint = <&csi_ep>;
+						clock-lanes = <0>;
+						data-lanes = <1 2>;
+						// clock-noncontinuous; // mira220 reg seq use continuois clk
+						link-frequencies =
+							/bits/ 64 <456000000>;
+					};
+				};
+	
+			};
+		};
+	};
+
+	csi_frag: fragment@101 {
+		target = <&csi1>;
+		csi: __overlay__ {
+			status = "okay";
+			brcm,media-controller;
+
+			port {
+				csi_ep: endpoint {
+					remote-endpoint = <&mira220_0>;
+					clock-lanes = <0>;
+					data-lanes = <1 2>;
+					// clock-noncontinuous; // mira220 reg seq use continous clk
+				};
+			};
+		};
+	};
+
+	__overrides__ {
+		rotation = <&mira220>,"rotation:0";
+		orientation = <&mira220>,"orientation:0";
+		skip-reg-upload = <&mira220>,"skip-reg-upload:0";
+		media-controller = <&csi>,"brcm,media-controller?";
+		cam0 = <&i2c_frag>, "target:0=",<&i2c_csi_dsi0>,
+		       <&csi_frag>, "target:0=",<&csi0>,
+		       <&clk_frag>, "target:0=",<&cam0_clk>,
+		       <&mira220>, "clocks:0=",<&cam0_clk>,
+		       <&mira220>, "VANA-supply:0=",<&cam0_reg>;
+	};
+};
