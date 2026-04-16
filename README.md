@@ -27,6 +27,7 @@ sudo depmod -a
 Compile the device tree overlay matching your platform and plugin board from the `dts` folder.
 
 ```
+cd dts/rpi
 sudo dtc mira220-overlay.dts -o /boot/firmware/overlays/mira220.dtbo
 ```
 
