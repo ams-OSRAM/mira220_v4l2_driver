@@ -1023,7 +1023,7 @@ static const char *const mira220_supply_name[] = {
  * - v flip
  * - h&v flips
  */
-static const u32 mira220_mbus_formats[] = {
+static const u32 mira220_mbus_color_formats[] = {
 	MEDIA_BUS_FMT_SRGGB12_1X12,
 	MEDIA_BUS_FMT_SGRBG12_1X12,
 	MEDIA_BUS_FMT_SGBRG12_1X12,
@@ -1039,6 +1039,13 @@ static const u32 mira220_mbus_formats[] = {
 	MEDIA_BUS_FMT_SGBRG8_1X8,
 	MEDIA_BUS_FMT_SBGGR8_1X8,
 
+};
+// Y12 does not seem to work, only support Y10 for now.
+static const u32 mira220_mbus_mono_formats[] = {
+	//MEDIA_BUS_FMT_Y12_1X12,
+	MEDIA_BUS_FMT_Y10_1X10,
+	MEDIA_BUS_FMT_Y8_1X8,
+	
 };
 
 /* Mode configs */
@@ -1070,6 +1077,7 @@ static const struct mira220_mode supported_modes[] = {
 struct mira220 {
 	struct v4l2_subdev sd;
 	struct media_pad pad;
+	bool is_mono;           /* New: Identify sensor variant */	
 
 	struct v4l2_mbus_framefmt fmt;
 
@@ -1237,22 +1245,52 @@ static int mira220_write_exposure_reg(struct mira220 *mira220, u32 exposure)
 	return 0;
 }
 
+static void mira220_set_default_format(struct mira220 *mira220)
+{
+	struct v4l2_mbus_framefmt *fmt;
+	printk(KERN_INFO "[MIRA220]: mira220_set_default_format\n");
+
+	fmt = &mira220->fmt;
+	fmt->code = mira220->is_mono ? mira220_mbus_mono_formats[0]: mira220_mbus_color_formats[0]; // MEDIA_BUS_FMT_Y10_1X10;
+	fmt->colorspace = V4L2_COLORSPACE_RAW;
+	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
+	fmt->quantization = V4L2_MAP_QUANTIZATION_DEFAULT(true,
+													  fmt->colorspace,
+													  fmt->ycbcr_enc);
+	fmt->xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
+	fmt->width = supported_modes[0].width;
+	fmt->height = supported_modes[0].height;
+	fmt->field = V4L2_FIELD_NONE;
+}
+
+
 /* Get bayer order based on flip setting. */
 static u32 mira220_get_format_code(struct mira220 *mira220, u32 code)
 {
 	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(mira220_mbus_formats); i++)
-		if (mira220_mbus_formats[i] == code)
-			break;
-
-	if (i >= ARRAY_SIZE(mira220_mbus_formats))
-		i = 0;
-
-	i = (i & ~3) | (mira220->vflip->val ? 2 : 0) | (mira220->hflip->val ? 0 : 1);
+	if (mira220->is_mono) {
+		// for now only support Y10
+		for (i = 0; i < ARRAY_SIZE(mira220_mbus_mono_formats); i++)
+			if (mira220_mbus_mono_formats[i] == code)
+				return mira220_mbus_mono_formats[i];    
+		return mira220_mbus_mono_formats[0];    
 
 
-	return mira220_mbus_formats[i];
+    } 
+	else {
+		for (i = 0; i < ARRAY_SIZE(mira220_mbus_color_formats); i++)
+			if (mira220_mbus_color_formats[i] == code)
+				break;
+
+		if (i >= ARRAY_SIZE(mira220_mbus_color_formats))
+			i = 0;
+
+		i = (i & ~3) | (mira220->vflip->val ? 2 : 0) | (mira220->hflip->val ? 0 : 1);
+
+
+		return mira220_mbus_color_formats[i];    
+	}
+	return code;
 }
 
 
@@ -1384,6 +1422,11 @@ static int mira220_set_pad_format(struct v4l2_subdev *sd,
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		// mira220->fmt = fmt->format;
 		// mira220->mode = mode;
+	
+
+		printk(KERN_INFO "[MIRA220]: Mira220 mode  = %d.   mode is %d \n", mira220->mode->code, mode->code);
+		printk(KERN_INFO "[MIRA220]: Mira220 fmt  = %d.   fmt is %d \n", mira220->fmt.code, fmt->format.code);
+		printk(KERN_INFO "[MIRA220]: Mira220 width  = %d.   height is %d \n", mira220->mode->width, mira220->mode->height);
 
 		// Update controls based on new mode (range and current value).
 		max_exposure = mira220_calculate_max_exposure_time(
@@ -1414,7 +1457,10 @@ static int mira220_set_pad_format(struct v4l2_subdev *sd,
 
 		__v4l2_ctrl_s_ctrl(mira220->vblank, mira220->mode->min_vblank);
 	}
+	else{
+		printk(KERN_INFO "[MIRA220]: Mira220 fmt  not active = %d.   fmt is %d \n", mira220->fmt.code, fmt->format.code);
 
+	}
 	return 0;
 }
 
@@ -1426,11 +1472,25 @@ static int mira220_enum_mbus_code(struct v4l2_subdev *sd,
 {
 	struct mira220 *mira220 = to_mira220(sd);
 
-	if (code->index >= (ARRAY_SIZE(mira220_mbus_formats) / 4))
-		return -EINVAL;
 
-	code->code = mira220_get_format_code(
-		mira220, mira220_mbus_formats[code->index * 4]);
+	if (mira220->is_mono) {
+		if (code->index >= (ARRAY_SIZE(mira220_mbus_mono_formats) ))
+			return -EINVAL;
+		printk(KERN_INFO "[MIRA220]: Mira220 enum_mbus_code: mono   \n");
+
+		code->code = mira220_get_format_code(
+			mira220, mira220_mbus_mono_formats[code->index ]);
+    
+    }
+	else {
+
+		if (code->index >= (ARRAY_SIZE(mira220_mbus_color_formats) / 4))
+			return -EINVAL;
+		printk(KERN_INFO "[MIRA220]: Mira220 enum_mbus_code: color   \n");
+
+		code->code = mira220_get_format_code(
+			mira220, mira220_mbus_color_formats[code->index * 4]);
+    }
 
 	return 0;
 }
@@ -1851,11 +1911,8 @@ static int mira220_probe(struct i2c_client *client)
 	struct device *dev = &client->dev;
 	struct mira220 *mira220;
 	int ret;
-
+	printk(KERN_INFO "[MIRA220]: Driver Version 0.0.\n");
 	mira220 = devm_kzalloc(&client->dev, sizeof(*mira220), GFP_KERNEL);
-	if (!mira220)
-		return -ENOMEM;
-
 	v4l2_i2c_subdev_init(&mira220->sd, client, &mira220_subdev_ops);
 	mira220->sd.internal_ops = &mira220_internal_ops;
 
@@ -1863,6 +1920,24 @@ static int mira220_probe(struct i2c_client *client)
 	if (IS_ERR(mira220->regmap))
 		return dev_err_probe(dev, PTR_ERR(mira220->regmap),
 				     "failed to initialize CCI\n");
+
+	mira220->is_mono = device_property_read_bool(&client->dev, "mira,mono");
+
+	if (mira220->is_mono) {
+		printk(KERN_INFO "[MIRA220]: DTOVERLAY MONO.\n");
+		printk(KERN_INFO "[MIRA220]: probing v4l2 sensor ams mira220 kernel module: MONO..\n");
+		// Set your internal state to use MEDIA_BUS_FMT_Y10_1X10
+		// and perhaps change the entity name to "mira220-mono"
+	} else {
+		printk(KERN_INFO "[MIRA220]: probing v4l2 sensor ams mira220 kernel module: COLOR..\n");
+
+		printk(KERN_INFO "[MIRA220]: DTOVERLAY COLOUR.\n");
+		// Set your internal state to use MEDIA_BUS_FMT_SRGGB10_1X10
+	}
+	if (!mira220)
+		return -ENOMEM;
+
+
 	/* Get system clock (xclk) */
 	mira220->xclk = devm_clk_get(dev, NULL);
 	if (IS_ERR(mira220->xclk)) {
@@ -1903,6 +1978,8 @@ static int mira220_probe(struct i2c_client *client)
 	ret = mira220_init_controls(mira220);
 	if (ret)
 		goto error_power_off;
+
+	mira220_set_default_format(mira220);
 
 	/* Initialize subdev */
 	mira220->sd.internal_ops = &mira220_internal_ops;
