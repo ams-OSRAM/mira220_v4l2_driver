@@ -96,7 +96,7 @@
 #define MIRA220_DEFAULT_EXPOSURE 1000
 #define MIRA220_EXPOSURE_MIN 1
 // Power on function timing
-#define MIRA220_XCLR_MIN_DELAY_US 100000
+#define MIRA220_XCLR_MIN_DELAY_US 150000
 #define MIRA220_XCLR_DELAY_RANGE_US 30
 
 /* Pixel rate is an artificial value
