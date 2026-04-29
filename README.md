@@ -38,6 +38,11 @@ This is how to set the device tree overlay for Raspberry Pi.
 ```
 echo "dtoverlay=mira220" | sudo tee -a /boot/firmware/config.txt
 ```
+alternatively, add the line `dtoverlay=mira220` at the end of the file.
+
+There is a device tree argument for a __monochrome image sensor__.
+
+Use: `dtoverlay=mira220,mono` instead.
 
 Finally, run `sudo reboot` to test your changes.
 
