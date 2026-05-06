@@ -13,7 +13,7 @@ make
 Place it in the kernel modules folder.
 
 ```
-sudo cp mira220.ko /lib/modules/$(uname -r)
+sudo cp mira220.ko /lib/modules/$(uname -r)/updates
 ```
 
 Resolve modules dependencies.
