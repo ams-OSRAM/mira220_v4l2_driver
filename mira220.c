@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+/// SPDX-License-Identifier: GPL-2.0
 /*
  * A V4L2 driver for ams MIRA220 cameras.
  * Copyright (C) 2022, ams-OSRAM
@@ -1248,7 +1248,9 @@ static int mira220_write_exposure_reg(struct mira220 *mira220, u32 exposure)
 static void mira220_set_default_format(struct mira220 *mira220)
 {
 	struct v4l2_mbus_framefmt *fmt;
-	printk(KERN_INFO "[MIRA220]: mira220_set_default_format\n");
+	struct i2c_client *client = v4l2_get_subdevdata(&mira220->sd);
+
+	dev_dbg(&client->dev, "[MIRA220]: mira220_set_default_format\n");
 
 	fmt = &mira220->fmt;
 	fmt->code = mira220->is_mono ? mira220_mbus_mono_formats[0]: mira220_mbus_color_formats[0]; // MEDIA_BUS_FMT_Y10_1X10;
@@ -1323,7 +1325,7 @@ static int mira220_set_ctrl(struct v4l2_ctrl *ctrl)
 	 */
 
 	if (pm_runtime_get_if_in_use(&client->dev) == 0) {
-		dev_info(
+		dev_dbg(
 			&client->dev,
 			"device in use, ctrl(id:0x%x,val:0x%x) is not handled\n",
 			ctrl->id, ctrl->val);
@@ -1397,6 +1399,7 @@ static int mira220_set_pad_format(struct v4l2_subdev *sd,
 	const struct mira220_mode *mode;
 	struct v4l2_mbus_framefmt *format;
 	struct v4l2_rect *crop;
+	struct i2c_client *client = v4l2_get_subdevdata(&mira220->sd);
 
 	u32 max_exposure = 0, default_exp = 0;
 
@@ -1424,9 +1427,9 @@ static int mira220_set_pad_format(struct v4l2_subdev *sd,
 		// mira220->mode = mode;
 	
 
-		printk(KERN_INFO "[MIRA220]: Mira220 mode  = %d.   mode is %d \n", mira220->mode->code, mode->code);
-		printk(KERN_INFO "[MIRA220]: Mira220 fmt  = %d.   fmt is %d \n", mira220->fmt.code, fmt->format.code);
-		printk(KERN_INFO "[MIRA220]: Mira220 width  = %d.   height is %d \n", mira220->mode->width, mira220->mode->height);
+		dev_dbg(&client->dev, "[MIRA220]: Mira220 mode  = %d.   mode is %d \n", mira220->mode->code, mode->code);
+		dev_dbg(&client->dev, "[MIRA220]: Mira220 fmt  = %d.   fmt is %d \n", mira220->fmt.code, fmt->format.code);
+		dev_dbg(&client->dev, "[MIRA220]: Mira220 width  = %d.   height is %d \n", mira220->mode->width, mira220->mode->height);
 
 		// Update controls based on new mode (range and current value).
 		max_exposure = mira220_calculate_max_exposure_time(
@@ -1458,7 +1461,7 @@ static int mira220_set_pad_format(struct v4l2_subdev *sd,
 		__v4l2_ctrl_s_ctrl(mira220->vblank, mira220->mode->min_vblank);
 	}
 	else{
-		printk(KERN_INFO "[MIRA220]: Mira220 fmt  not active = %d.   fmt is %d \n", mira220->fmt.code, fmt->format.code);
+		dev_dbg(&client->dev, "[MIRA220]: Mira220 fmt  not active = %d.   fmt is %d \n", mira220->fmt.code, fmt->format.code);
 
 	}
 	return 0;
@@ -1471,12 +1474,13 @@ static int mira220_enum_mbus_code(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct mira220 *mira220 = to_mira220(sd);
+	struct i2c_client *client = v4l2_get_subdevdata(&mira220->sd);
 
 
 	if (mira220->is_mono) {
 		if (code->index >= (ARRAY_SIZE(mira220_mbus_mono_formats) ))
 			return -EINVAL;
-		printk(KERN_INFO "[MIRA220]: Mira220 enum_mbus_code: mono   \n");
+		dev_dbg(&client->dev, "[MIRA220]: Mira220 enum_mbus_code: mono   \n");
 
 		code->code = mira220_get_format_code(
 			mira220, mira220_mbus_mono_formats[code->index ]);
@@ -1486,7 +1490,7 @@ static int mira220_enum_mbus_code(struct v4l2_subdev *sd,
 
 		if (code->index >= (ARRAY_SIZE(mira220_mbus_color_formats) / 4))
 			return -EINVAL;
-		printk(KERN_INFO "[MIRA220]: Mira220 enum_mbus_code: color   \n");
+		dev_dbg(&client->dev, "[MIRA220]: Mira220 enum_mbus_code: color   \n");
 
 		code->code = mira220_get_format_code(
 			mira220, mira220_mbus_color_formats[code->index * 4]);
@@ -1616,6 +1620,147 @@ static int mira220_get_selection(struct v4l2_subdev *sd,
 
 	return -EINVAL;
 }
+/* OTP power on */
+static void mira220_otp_power_on(struct mira220 *mira220)
+{
+	int ret;
+
+	ret = cci_write(mira220->regmap, MIRA220_OTP_CMD_REG,
+			MIRA220_OTP_CMD_UP, NULL);
+
+}
+
+/* OTP power off */
+static void mira220_otp_power_off(struct mira220 *mira220)
+{
+	int ret;
+
+	ret = cci_write(mira220->regmap, MIRA220_OTP_CMD_REG,
+			MIRA220_OTP_CMD_DOWN, NULL);
+
+}
+
+/* OTP power on */
+static int mira220_otp_read(struct mira220 *mira220, u8 addr, u8 offset,
+			    u8 *val)
+{
+	int ret;
+	u64 readback;
+
+	ret = cci_write(mira220->regmap, CCI_REG8(0x0086), addr, NULL);
+	ret = cci_write(mira220->regmap, CCI_REG8(0x0080), 0x02, NULL);
+	ret = cci_read(mira220->regmap, CCI_REG8(0x0082 + offset), &readback,
+		       NULL);
+	*val = readback & 0xFF;
+
+	return ret;
+}
+
+/* Verify chip ID, module version, and unique ID */
+static int mira220_identify_module(struct mira220 *mira220)
+{
+    struct i2c_client *client = v4l2_get_subdevdata(&mira220->sd);
+    int ret;
+    u8 val;
+    u8 id;
+    u8 b0, b1, b2, b3, b4, b5, b6, b7;
+
+    mira220_otp_power_on(mira220);
+    fsleep(100);
+
+    /* Log module version checks */
+    ret = mira220_otp_read(mira220, 0x0d, 0, &val);
+    if (ret < 0) goto err_power_off;
+    dev_dbg(&client->dev, "Read OTP add 0x0d with val 0x%02x\n", val);
+
+    ret = mira220_otp_read(mira220, 0x1e, 0, &val);
+    if (ret < 0) goto err_power_off;
+    dev_dbg(&client->dev, "Read OTP add 0x1e with val 0x%02x\n", val);
+
+    /* Check unique module hardware ID version */
+    ret = mira220_otp_read(mira220, 0x3a, 0, &id);
+    if (ret < 0) goto err_power_off;
+
+    if (id < 1 || id > 2) {
+        dev_err(&client->dev, "Read OTP 0x3a, id must be 1 or 2, but got: 0x%02x\n", id);
+        ret = -EINVAL; // Use standard kernel error code
+        goto err_power_off;
+    }
+
+    /* Read Unique ID bytes sequentially using the correct 4-argument signature */
+    ret = mira220_otp_read(mira220, 0x25, 0, &b0); if (ret < 0) goto err_power_off;
+    ret = mira220_otp_read(mira220, 0x1e, 0, &b1); if (ret < 0) goto err_power_off;
+    ret = mira220_otp_read(mira220, 0x1e, 1, &b2); if (ret < 0) goto err_power_off;
+    ret = mira220_otp_read(mira220, 0x1e, 2, &b3); if (ret < 0) goto err_power_off;
+    ret = mira220_otp_read(mira220, 0x1d, 0, &b4); if (ret < 0) goto err_power_off;
+    ret = mira220_otp_read(mira220, 0x1d, 1, &b5); if (ret < 0) goto err_power_off;
+    ret = mira220_otp_read(mira220, 0x1d, 2, &b6); if (ret < 0) goto err_power_off;
+    ret = mira220_otp_read(mira220, 0x1d, 3, &b7); if (ret < 0) goto err_power_off;
+
+    dev_info(&client->dev, "Unique ID: %02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X\n",
+             b7, b6, b5, b4, b3, b2, b1, b0);
+
+err_power_off:
+    mira220_otp_power_off(mira220);
+    return ret;
+}
+
+static int mira220_otp_restore(struct mira220 *mira220)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&mira220->sd);
+	static const u16 reg_list[] = {
+		0x4015, 0x4016, 0x4017, 0x4018, 0x403B, 0x4040, 0x4041, 0x4042,
+		0x402a, 0x4029, 0x4009
+	};
+	u8 val;
+	int ret;
+	int i;
+
+	mira220_otp_power_on(mira220);
+
+	fsleep(100);
+
+	/* Write OTP to image sensor when programmed */
+	ret = mira220_otp_read(mira220, 0x1d, 0, &val);
+	if (ret < 0) {
+		dev_err(&client->dev, "Failed to read OTP programming status\n");
+		goto out;
+	}
+
+	if (val != 0xff) {
+		for (i = 0; i < ARRAY_SIZE(reg_list); i++) {
+			ret = mira220_otp_read(mira220, i, 0, &val);
+			if (ret < 0) {
+				dev_err(&client->dev, "Failed to read OTP address %d\n", i);
+				goto out;
+			}
+			ret = cci_write(mira220->regmap, CCI_REG8(reg_list[i]), val, NULL);
+			if (ret < 0) {
+				dev_err(&client->dev, "Failed to write register 0x%04x\n", reg_list[i]);
+				goto out;
+			}
+			dev_dbg(&client->dev, "OTP CALIBRATION: 0x%04x, val=0x%02x\n", reg_list[i], val);
+		}
+
+		ret = mira220_otp_read(mira220, 0x0d, 0, &val);
+		if (ret < 0) {
+			dev_err(&client->dev, "Failed to read OTP address 0x0d\n");
+			goto out;
+		}
+		ret = cci_write(mira220->regmap, CCI_REG8(0x403e), val, NULL);
+		if (ret < 0) {
+			dev_err(&client->dev, "Failed to write register 0x403e\n");
+			goto out;
+		}
+	} else {
+		dev_info(&client->dev, "OTP not programmed, skipping calibration\n");
+	}
+
+out:
+	mira220_otp_power_off(mira220);
+
+	return ret;
+}
 
 static int mira220_start_streaming(struct mira220 *mira220,
 				struct v4l2_subdev_state *state)
@@ -1645,6 +1790,12 @@ static int mira220_start_streaming(struct mira220 *mira220,
 				  reg_list->num_of_regs, NULL);
 	if (ret) {
 		dev_err(&client->dev, "%s failed to set mode\n", __func__);
+		goto err_rpm_put;
+	}
+
+	ret = mira220_otp_restore(mira220);
+	if (ret) {
+		dev_err(&client->dev, "%s failed to restore OTP calibration\n", __func__);
 		goto err_rpm_put;
 	}
 
@@ -1720,64 +1871,6 @@ static int mira220_get_regulators(struct mira220 *mira220)
 				       mira220->supplies);
 }
 
-/* OTP power on */
-static void mira220_otp_power_on(struct mira220 *mira220)
-{
-	int ret;
-
-	ret = cci_write(mira220->regmap, MIRA220_OTP_CMD_REG,
-			MIRA220_OTP_CMD_UP, NULL);
-
-}
-
-/* OTP power off */
-static void mira220_otp_power_off(struct mira220 *mira220)
-{
-	int ret;
-
-	ret = cci_write(mira220->regmap, MIRA220_OTP_CMD_REG,
-			MIRA220_OTP_CMD_DOWN, NULL);
-
-}
-
-/* OTP power on */
-static int mira220_otp_read(struct mira220 *mira220, u8 addr, u8 offset,
-			    u8 *val)
-{
-	int ret;
-	u64 readback;
-
-	ret = cci_write(mira220->regmap, CCI_REG8(0x0086), addr, NULL);
-	ret = cci_write(mira220->regmap, CCI_REG8(0x0080), 0x02, NULL);
-	ret = cci_read(mira220->regmap, CCI_REG8(0x0082 + offset), &readback,
-		       NULL);
-	*val = readback & 0xFF;
-
-	return ret;
-}
-
-/* Verify chip ID */
-static int mira220_identify_module(struct mira220 *mira220)
-{
-	struct i2c_client *client = v4l2_get_subdevdata(&mira220->sd);
-	int ret;
-	u8 val;
-
-	mira220_otp_power_on(mira220);
-
-	fsleep(100);
-
-	ret = mira220_otp_read(mira220, 0x0d, 0, &val);
-	dev_err(&client->dev, "Read OTP from new driver w add 0x0d with val %x\n", val);
-	ret = mira220_otp_read(mira220, 0x19, 0, &val);
-	dev_err(&client->dev, "Read OTP new driver add 0x19 with val %x\n", val);
-	ret = mira220_otp_read(mira220, 0x19, 1, &val);
-	dev_err(&client->dev, "Read OTP new driver  add 0x19+1 with val %x\n", val);
-
-	mira220_otp_power_off(mira220);
-
-	return ret;
-}
 
 static const struct v4l2_subdev_core_ops mira220_core_ops = {
 	.subscribe_event = v4l2_ctrl_subdev_subscribe_event,
@@ -1910,11 +2003,12 @@ static int mira220_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct mira220 *mira220;
+	
 	int ret;
-	printk(KERN_INFO "[MIRA220]: Driver Version 0.0.\n");
 	mira220 = devm_kzalloc(&client->dev, sizeof(*mira220), GFP_KERNEL);
 	v4l2_i2c_subdev_init(&mira220->sd, client, &mira220_subdev_ops);
 	mira220->sd.internal_ops = &mira220_internal_ops;
+	dev_dbg(&client->dev, "[MIRA220]: Driver Version 0.0.\n");
 
 	mira220->regmap = devm_cci_regmap_init_i2c(client, 16);
 	if (IS_ERR(mira220->regmap))
@@ -1924,14 +2018,14 @@ static int mira220_probe(struct i2c_client *client)
 	mira220->is_mono = device_property_read_bool(&client->dev, "mira,mono");
 
 	if (mira220->is_mono) {
-		printk(KERN_INFO "[MIRA220]: DTOVERLAY MONO.\n");
-		printk(KERN_INFO "[MIRA220]: probing v4l2 sensor ams mira220 kernel module: MONO..\n");
+		dev_dbg(&client->dev, "[MIRA220]: DTOVERLAY MONO.\n");
+		dev_dbg(&client->dev, "[MIRA220]: probing v4l2 sensor ams mira220 kernel module: MONO..\n");
 		// Set your internal state to use MEDIA_BUS_FMT_Y10_1X10
 		// and perhaps change the entity name to "mira220-mono"
 	} else {
-		printk(KERN_INFO "[MIRA220]: probing v4l2 sensor ams mira220 kernel module: COLOR..\n");
+		dev_dbg(&client->dev, "[MIRA220]: probing v4l2 sensor ams mira220 kernel module: COLOR..\n");
 
-		printk(KERN_INFO "[MIRA220]: DTOVERLAY COLOUR.\n");
+		dev_dbg(&client->dev, "[MIRA220]: DTOVERLAY COLOUR.\n");
 		// Set your internal state to use MEDIA_BUS_FMT_SRGGB10_1X10
 	}
 	if (!mira220)
