@@ -990,6 +990,9 @@ static const struct cci_reg_sequence full_1600_1400_1500_12b_2lanes_reg_new[] = 
 	/* TP */
 	{ CCI_REG8(0x2091), 0x0 }, //  Test Pattern Generator.TPG_EN(0)
 	{ CCI_REG8(0x2091), 0x0 }, //  Test Pattern Generator.TPG_CONFIG(0)
+	/* Reduce Slew Rate - fix for defect line */
+	{ CCI_REG8(0x402D), 0x7B },
+
 };
 
 static const char *const mira220_test_pattern_menu[] = {
