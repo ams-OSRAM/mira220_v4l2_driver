@@ -95,9 +95,10 @@
 // Default exposure is adjusted to mode with smallest height
 #define MIRA220_DEFAULT_EXPOSURE 1000
 #define MIRA220_EXPOSURE_MIN 1
-// Power on function timing
+// Power on function timing. the on-board sequencer takes 30ms.
+// however, incomplete power up takes 120ms+
 #define MIRA220_XCLR_MIN_DELAY_US 150000
-#define MIRA220_XCLR_DELAY_RANGE_US 30
+#define MIRA220_READ_MIN_DELAY_US 50000
 
 /* Pixel rate is an artificial value
  * This value is used for timing calculations
@@ -1151,6 +1152,7 @@ static int mira220_power_off(struct device *dev)
 	clk_disable_unprepare(mira220->xclk);
 	regulator_bulk_disable(MIRA220_NUM_SUPPLIES, mira220->supplies);
 
+	fsleep(MIRA220_XCLR_MIN_DELAY_US);
 	return 0;
 }
 
@@ -1206,8 +1208,7 @@ static int mira220_write_stop_streaming_regs(struct mira220 *mira220)
 		return ret;
 	}
 
-	fsleep(40000);
-
+	fsleep(MIRA220_XCLR_MIN_DELAY_US);
 	return ret;
 }
 
@@ -1669,7 +1670,7 @@ static int mira220_identify_module(struct mira220 *mira220)
     u8 b0, b1, b2, b3, b4, b5, b6, b7;
 
     mira220_otp_power_on(mira220);
-    fsleep(100);
+    fsleep(1000);
 
     /* Log module version checks */
     ret = mira220_otp_read(mira220, 0x0d, 0, &val);
@@ -2063,7 +2064,7 @@ static int mira220_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 
-	fsleep(100000);
+	fsleep(MIRA220_XCLR_MIN_DELAY_US);
 
 	ret = mira220_identify_module(mira220);
 	if (ret)
