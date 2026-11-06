@@ -1,6 +1,24 @@
 # ams-mira220 Linux driver
 
-[![CI](https://github.com/ams-OSRAM/mira220_v4l2_driver/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ams-OSRAM/mira220_v4l2_driver/actions/workflows/ci.yml) [![License: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/ams-OSRAM/mira220_v4l2_driver/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ams-OSRAM/mira220_v4l2_driver/actions/workflows/ci.yml) [![License: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-blue.svg)](LICENSE) [![Tested kernel](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Fraspberrypi%2Flinux&query=%24.default_branch&label=tested%20kernel&logo=linux)](#supported-hardware-and-kernels) [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-3%20%7C%204%20%7C%205%20%7C%20Zero%202%20W-c51a4a?logo=raspberrypi)](#supported-hardware-and-kernels)
+
+## Supported hardware and kernels
+
+| Raspberry Pi | Camera connector | Kernel config tested in CI |
+|---|---|---|
+| Pi 3, Pi 4 | 15-pin | `bcm2711_defconfig` |
+| Zero 2 W | 22-pin | `bcm2711_defconfig` |
+| Pi 5 | 22-pin (CAM0 and CAM1) | `bcm2712_defconfig` |
+
+Raspberry Pi OS 64-bit is required. The driver supports only the kernel that Raspberry Pi OS currently ships; the *tested kernel* badge shows that branch of [raspberrypi/linux](https://github.com/raspberrypi/linux).
+
+CI runs on every push and every Monday. It:
+
+- builds the module against that kernel for both configurations above,
+- builds the device tree overlays and checks the binding with `dt_binding_check`,
+- installs and removes the module with DKMS on Ubuntu 26.04.
+
+Each run's summary lists the exact kernel version. CI does not test on real hardware.
 
 ## Installation
 
