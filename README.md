@@ -1,5 +1,7 @@
 # ams-mira220 Linux driver
 
+[![CI](https://github.com/ams-OSRAM/mira220_v4l2_driver/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ams-OSRAM/mira220_v4l2_driver/actions/workflows/ci.yml) [![License: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-blue.svg)](LICENSE)
+
 ## Installation
 
 ### Prerequisites
