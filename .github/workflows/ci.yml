@@ -11,8 +11,8 @@ jobs:
     name: Device tree overlays and binding
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install tools
@@ -39,7 +39,7 @@ jobs:
       matrix:
         branch: [rpi-6.12.y, rpi-6.18.y]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install build tools
         run: |
           sudo apt-get update
@@ -51,8 +51,10 @@ jobs:
           make -C ../linux bcm2711_defconfig
           make -C ../linux -j"$(nproc)" modules_prepare
       - name: Build module
-        run: make KDIR="$(realpath ../linux)"
-      - uses: actions/upload-artifact@v4
+        # modules_prepare does not create Module.symvers, so kernel symbols
+        # cannot be resolved here: report them as warnings. All code is still compiled.
+        run: make KDIR="$(realpath ../linux)" KBUILD_MODPOST_WARN=1
+      - uses: actions/upload-artifact@v5
         with:
           name: mira220-${{ matrix.branch }}
           path: mira220.ko
@@ -62,7 +64,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: ubuntu:26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install DKMS and kernel headers
         run: |
           apt-get update
