@@ -17,19 +17,9 @@
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
-#include <linux/version.h>
 
 #include <media/v4l2-cci.h>
 #include <media/v4l2-common.h>
-
-/*
- * devm_v4l2_sensor_clk_get() is only available from Linux 6.18. On device
- * tree systems such as the Raspberry Pi it does the same as devm_clk_get(),
- * so fall back to that on older kernels (Raspberry Pi OS 6.12).
- */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
-#define devm_v4l2_sensor_clk_get(dev, id) devm_clk_get(dev, id)
-#endif
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
