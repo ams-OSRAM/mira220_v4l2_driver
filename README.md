@@ -4,6 +4,8 @@
 
 ### Prerequisites
 
+The driver supports the latest Raspberry Pi OS kernel only (Linux 6.18 or later). Run `sudo apt full-upgrade` and reboot first if `uname -r` shows an older kernel.
+
 Install git and the kernel headers for the running kernel, then clone this repository.
 
 ```

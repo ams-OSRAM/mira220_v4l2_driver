@@ -23,7 +23,8 @@ jobs:
       - name: Build overlays
         run: make dtbo
       - name: Get Raspberry Pi kernel source
-        run: git clone --depth 1 --branch rpi-6.18.y https://github.com/raspberrypi/linux.git ../linux
+        # The default branch is the kernel that Raspberry Pi OS currently ships.
+        run: git clone --depth 1 https://github.com/raspberrypi/linux.git ../linux
       - name: Check binding with dt_binding_check
         run: |
           cp "ams,mira220.yaml" ../linux/Documentation/devicetree/bindings/media/i2c/
@@ -32,12 +33,8 @@ jobs:
           ! grep "ams,mira220" binding.log
 
   rpi-kernel:
-    name: Build for Raspberry Pi kernel ${{ matrix.branch }}
+    name: Build for the latest Raspberry Pi kernel
     runs-on: ubuntu-24.04-arm
-    strategy:
-      fail-fast: false
-      matrix:
-        branch: [rpi-6.12.y, rpi-6.18.y]
     steps:
       - uses: actions/checkout@v5
       - name: Install build tools
@@ -45,7 +42,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev
       - name: Get Raspberry Pi kernel source
-        run: git clone --depth 1 --branch ${{ matrix.branch }} https://github.com/raspberrypi/linux.git ../linux
+        # The default branch is the kernel that Raspberry Pi OS currently ships.
+        run: |
+          git clone --depth 1 https://github.com/raspberrypi/linux.git ../linux
+          echo "Kernel branch: $(git -C ../linux branch --show-current)"
       - name: Prepare kernel
         run: |
           make -C ../linux bcm2711_defconfig
@@ -56,7 +56,7 @@ jobs:
         run: make KDIR="$(realpath ../linux)" KBUILD_MODPOST_WARN=1
       - uses: actions/upload-artifact@v5
         with:
-          name: mira220-${{ matrix.branch }}
+          name: mira220
           path: mira220.ko
 
   dkms:
