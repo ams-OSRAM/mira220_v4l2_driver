@@ -49,10 +49,11 @@
 modules.order
 Module.symvers
 Mkfile.old
-dkms.conf
 
 # debug information files
 *.dwo
 
 # vscode
 .vscode
+# Compiled device tree overlays
+*.dtbo

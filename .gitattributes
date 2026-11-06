@@ -1,0 +1,6 @@
+# Shell scripts, Makefiles and DKMS config must keep LF line endings on the Pi
+*.sh text eol=lf
+Makefile text eol=lf
+Kbuild text eol=lf
+dkms.conf text eol=lf
+*.yaml text eol=lf
