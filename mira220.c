@@ -144,6 +144,17 @@
 
 /* Test Pattern */
 #define MIRA220_REG_TEST_PATTERN	CCI_REG8(0x2091)
+
+/*
+ * Register access controls, with the same IDs as in the Mira050/016 driver.
+ * The Mira220 has no register banks, and its two contexts are separate
+ * registers (EXP_TIME_A, EXP_TIME_B, ...), so there is no bank or context to
+ * select.
+ */
+#define MIRA_CID_BASE			(V4L2_CID_USER_BASE + 0x2000)
+#define MIRA_CID_REG_ADDRESS		(MIRA_CID_BASE + 8)
+#define MIRA_CID_REG_WIDTH		(MIRA_CID_BASE + 11)
+#define MIRA_CID_REG_VALUE		(MIRA_CID_BASE + 12)
 #define MIRA220_TEST_PATTERN_DISABLE	0x00
 #define MIRA220_TEST_PATTERN_VERTICAL_GRADIENT 0x01
 
@@ -980,6 +991,12 @@ struct mira220 {
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *exposure;
 
+	/* Register access. */
+	struct v4l2_ctrl *reg_address;
+	struct v4l2_ctrl *reg_width;
+	/* Set while the controls are applied at stream start. */
+	bool ctrl_setup;
+
 	struct regmap *regmap;
 };
 
@@ -1179,6 +1196,54 @@ static u32 mira220_get_format_code(struct mira220 *mira220, u32 code)
 	return mira220_mbus_color_formats[i];
 }
 
+/*
+ * Read or write the register selected with the register access controls, big
+ * endian (lowest address first). Runs under the control handler lock, which is
+ * also the lock of the subdev state, so it cannot interleave with the
+ * driver's own register accesses.
+ */
+static int mira220_reg_access(struct mira220 *mira220, bool write, s64 *val)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&mira220->sd);
+	u32 address = mira220->reg_address->cur.val;
+	u32 width = mira220->reg_width->cur.val;
+	u32 reg = address | (width << CCI_REG_WIDTH_SHIFT);
+	int ret = 0;
+	u64 v;
+
+	if (address + width - 1 > 0xffff)
+		return -EINVAL;
+	if (write && (*val < 0 || (u64)*val >= BIT_ULL(8 * width)))
+		return -ERANGE;
+
+	/* The registers only hold their values while the sensor streams. */
+	if (!pm_runtime_get_if_in_use(&client->dev))
+		return -EBUSY;
+
+	if (write) {
+		cci_write(mira220->regmap, reg, *val, &ret);
+	} else {
+		cci_read(mira220->regmap, reg, &v, &ret);
+		if (!ret)
+			*val = v;
+	}
+
+	pm_runtime_put_autosuspend(&client->dev);
+
+	return ret;
+}
+
+static int mira220_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct mira220 *mira220 =
+		container_of(ctrl->handler, struct mira220, ctrl_handler);
+
+	if (ctrl->id == MIRA_CID_REG_VALUE)
+		return mira220_reg_access(mira220, false, ctrl->p_new.p_s64);
+
+	return -EINVAL;
+}
+
 static int mira220_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct mira220 *mira220 =
@@ -1187,6 +1252,18 @@ static int mira220_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct v4l2_mbus_framefmt *format;
 	struct v4l2_subdev_state *state;
 	int ret = 0;
+
+	switch (ctrl->id) {
+	case MIRA_CID_REG_ADDRESS:
+	case MIRA_CID_REG_WIDTH:
+		/* Used by the next register access. */
+		return 0;
+	case MIRA_CID_REG_VALUE:
+		/* Never replay a register write at stream start. */
+		if (mira220->ctrl_setup)
+			return 0;
+		return mira220_reg_access(mira220, true, ctrl->p_new.p_s64);
+	}
 
 	state = v4l2_subdev_get_locked_active_state(&mira220->sd);
 	format = v4l2_subdev_state_get_format(state, 0);
@@ -1248,7 +1325,38 @@ static int mira220_set_ctrl(struct v4l2_ctrl *ctrl)
 }
 
 static const struct v4l2_ctrl_ops mira220_ctrl_ops = {
+	.g_volatile_ctrl = mira220_g_volatile_ctrl,
 	.s_ctrl = mira220_set_ctrl,
+};
+
+static const struct v4l2_ctrl_config mira220_reg_address_ctrl = {
+	.ops = &mira220_ctrl_ops,
+	.id = MIRA_CID_REG_ADDRESS,
+	.name = "Register Address",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.max = 0xffff,
+	.step = 1,
+};
+
+static const struct v4l2_ctrl_config mira220_reg_width_ctrl = {
+	.ops = &mira220_ctrl_ops,
+	.id = MIRA_CID_REG_WIDTH,
+	.name = "Register Width",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.min = 1,
+	.max = 4,
+	.step = 1,
+	.def = 1,
+};
+
+static const struct v4l2_ctrl_config mira220_reg_value_ctrl = {
+	.ops = &mira220_ctrl_ops,
+	.id = MIRA_CID_REG_VALUE,
+	.name = "Register Value",
+	.type = V4L2_CTRL_TYPE_INTEGER64,
+	.max = U32_MAX,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
 };
 
 static void mira220_update_pad_format(struct mira220 *mira220,
@@ -1699,8 +1807,11 @@ static int mira220_enable_streams(struct v4l2_subdev *sd,
 		ret = mira220_set_framefmt(mira220, state);
 
 	/* Apply customized values from user */
-	if (!ret)
+	if (!ret) {
+		mira220->ctrl_setup = true;
 		ret = __v4l2_ctrl_handler_setup(mira220->sd.ctrl_handler);
+		mira220->ctrl_setup = false;
+	}
 	if (!ret)
 		ret = mira220_write_start_streaming_regs(mira220);
 
@@ -1784,7 +1895,7 @@ static int mira220_init_controls(struct mira220 *mira220)
 	int ret;
 
 	ctrl_hdlr = &mira220->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 12);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 15);
 	if (ret)
 		return ret;
 
@@ -1840,6 +1951,13 @@ static int mira220_init_controls(struct mira220 *mira220)
 	v4l2_fwnode_device_parse(&client->dev, &props);
 	v4l2_ctrl_new_fwnode_properties(ctrl_hdlr, &mira220_ctrl_ops,
 					&props);
+
+	mira220->reg_address = v4l2_ctrl_new_custom(ctrl_hdlr,
+						    &mira220_reg_address_ctrl,
+						    NULL);
+	mira220->reg_width = v4l2_ctrl_new_custom(ctrl_hdlr,
+						  &mira220_reg_width_ctrl, NULL);
+	v4l2_ctrl_new_custom(ctrl_hdlr, &mira220_reg_value_ctrl, NULL);
 
 	if (ctrl_hdlr->error) {
 		ret = ctrl_hdlr->error;

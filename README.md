@@ -80,3 +80,26 @@ Raspberry Pi OS (kernel 6.12 and later) already ships a Mira220 driver and overl
 
 Finally, run `sudo reboot` to test your changes.
 
+
+## Register access
+
+The driver has register access controls on the sensor sub-device, with the same IDs as the
+Mira050/016 driver (`MIRA_CID_*` in `mira220.c`):
+
+| Control | |
+|---------|-|
+| `register_address`, `register_width` (1-4 bytes) | the register for the next access |
+| `register_value` | reading it reads the register, setting it writes it (big-endian) |
+
+The Mira220 has no register banks; its two contexts are separate registers (`EXP_TIME_A` and
+`EXP_TIME_B`, ...). Register access runs under the driver's lock and only works while the sensor
+streams (`EBUSY` otherwise). Set the address and width before the value, or list them before it in
+the same call:
+
+```
+v4l2-ctl -d /dev/v4l-subdev2 -c register_address=0x100c,register_width=2
+v4l2-ctl -d /dev/v4l-subdev2 -C register_value
+```
+
+The driver does not know about values written this way and may overwrite them at the next stream
+start or exposure change.
