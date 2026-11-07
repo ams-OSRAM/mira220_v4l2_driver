@@ -33,7 +33,7 @@
 		target = <&cam1_reg>;
 		cam_reg: __overlay__ {
 			startup-delay-us = <120000>;
-			off-on-delay-us = <40000>;
+			off-on-delay-us = <500000>;	/* full power-down before re-enable, see mira050_016_v4l2_driver#3 */
 		};
 	};
 

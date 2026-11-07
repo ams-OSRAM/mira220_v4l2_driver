@@ -1062,6 +1062,13 @@ static int mira220_power_on(struct device *dev)
 
 	gpiod_set_value_cansleep(mira220->reset_gpio, 0);
 
+	/*
+	 * Let the sensor start up on the new clock before it is configured. The
+	 * Mira050/016 driver needed this after a power cycle (no frames otherwise,
+	 * see ams-OSRAM/mira050_016_v4l2_driver#3).
+	 */
+	fsleep(10000);
+
 	return 0;
 
 reg_off:
