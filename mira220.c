@@ -1137,6 +1137,21 @@ static u32 mira220_calc_min_vblank(struct mira220 *mira220)
 	       + MIRA220_MIN_VBLANK_MARGIN;
 }
 
+/*
+ * The exposure register is 16 bits wide, so a frame longer than the longest
+ * exposure (plus the global sampling time) cannot be filled. Limit vblank so
+ * that the maximum frame length matches the maximum exposure; libcamera
+ * derives its exposure limit from the frame length.
+ */
+static u32 mira220_calc_max_vblank(struct mira220 *mira220, u32 height)
+{
+	u32 max_vblank = MIRA220_MAX_EXPOSURE - height +
+			 (MIRA220_GLOB_NUM_CLK_CYCLES /
+			  mira220_min_row_length(mira220));
+
+	return min(max_vblank, MIRA220_MAX_VBLANK);
+}
+
 static int mira220_write_exposure_reg(struct mira220 *mira220, u32 exposure)
 {
 	struct i2c_client *const client = v4l2_get_subdevdata(&mira220->sd);
@@ -1295,7 +1310,9 @@ static int mira220_set_pad_format(struct v4l2_subdev *sd,
 	/* Update vblank based on new mode. */
 	min_vblank = mira220_calc_min_vblank(mira220);
 	ret = __v4l2_ctrl_modify_range(mira220->vblank, min_vblank,
-				       MIRA220_MAX_VBLANK, 1, min_vblank);
+				       mira220_calc_max_vblank(mira220,
+							       fmt->format.height),
+				       1, min_vblank);
 	if (ret)
 		return ret;
 
@@ -1796,7 +1813,10 @@ static int mira220_init_controls(struct mira220 *mira220)
 	min_vblank = mira220_calc_min_vblank(mira220);
 	mira220->vblank = v4l2_ctrl_new_std(ctrl_hdlr, &mira220_ctrl_ops,
 					    V4L2_CID_VBLANK,
-					    min_vblank, MIRA220_MAX_VBLANK, 1,
+					    min_vblank,
+					    mira220_calc_max_vblank(mira220,
+						MIRA220_PIXEL_ARRAY_HEIGHT),
+					    1,
 					    min_vblank);
 
 	link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr, NULL, V4L2_CID_LINK_FREQ,
